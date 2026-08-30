@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Class Notes</h1>
+<p class="sub">Record a class, drop in the slides, get notes.</p>
+
+<div class="card">
+  <div class="grid">
+    <div>
+      <label for="course">Course</label>
+      <input id="course" list="courses" placeholder="e.g. CS101" autocomplete="off" value="{{ suggested }}">
+      <datalist id="courses">
+        {% for c in sessions | map(attribute='course') | unique %}<option value="{{ c }}">{% endfor %}
+      </datalist>
+      {% if suggested %}<p class="note" style="margin-top:.4rem">Looks like <strong>{{ suggested }}</strong> right now.</p>{% endif %}
+    </div>
+    <div>
+      <label for="date">Date</label>
+      <input id="date" type="date">
+    </div>
+    <div>
+      <label for="mode">Class type</label>
+      <select id="mode">
+        <option value="mic">In person (microphone)</option>
+        <option value="system">Online / Teams (shared audio)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="materials" style="margin-top:1.5rem; border-top:1px solid var(--line); padding-top:1.25rem">
+    <label>Class materials <span class="tag" id="matcount"></span></label>
+
+    <div class="row" style="margin-top:.4rem">
+      <input type="file" id="files" multiple
+             accept=".pdf,.pptx,.docx,.png,.jpg,.jpeg,.heic,.webp,.tiff" style="flex:1;min-width:220px">
+    </div>
+    <div class="row" style="margin-top:.5rem">
+      <label style="margin:0;display:flex;align-items:center;gap:.4rem;cursor:pointer">
+        <input type="checkbox" id="toshared" style="width:auto">
+        Also keep for every {{ '' }}class in this course (textbook, syllabus)
+      </label>
+    </div>
+
+    <div id="reuse"></div>
+    <p class="note">Uploaded when recording starts, so they are parsed while class runs.</p>
+  </div>
+
+  <div class="row" style="margin-top:1.25rem">
+    <button id="rec" class="primary">Start recording</button>
+    <span id="status" class="status"></span>
+  </div>
+
+  <p class="note" id="hint"></p>
+</div>
+
+<h2>Sessions</h2>
+{% if sessions %}
+<ul class="list">
+  {% for s in sessions %}
+  <li><a href="/session/{{ s.course }}/{{ s.date }}">
+    <span><strong>{{ s.course }}</strong> &nbsp;<span class="tag">{{ s.date }}</span></span>
+    <span class="tag">{{ 'notes ready' if s.has_notes else ('recorded' if s.has_audio else 'empty') }}</span>
+  </a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="sub">Nothing yet. Record your first class above.</p>
+{% endif %}
+
+<script>
+const $ = id => document.getElementById(id);
+$('date').value = new Date().toLocaleDateString('en-CA');
+
+const HINTS = {
+  mic: 'Records from your microphone. Put the laptop or phone where it can hear the lecturer.',
+  system: 'Chrome will ask what to share — pick the Teams tab and tick "Share tab audio". Using the Teams desktop app instead? Share your whole screen and tick "Share system audio".',
+};
+const updateHint = () => $('hint').textContent = HINTS[$('mode').value];
+$('mode').onchange = updateHint;
+updateHint();
+
+const say = (m, err) => { $('status').innerHTML = m; $('status').className = 'status' + (err ? ' err' : ''); };
+
+// --- what this course already has to reuse ---
+let reuseTimer;
+async function loadReusable() {
+  const course = $('course').value.trim();
+  $('reuse').innerHTML = '';
+  $('matcount').textContent = '';
+  if (!course) return;
+
+  let data;
+  try {
+    const r = await fetch(`/api/course/${encodeURIComponent(course)}/materials`);
+    if (!r.ok) return;
+    data = await r.json();
+  } catch { return; }
+
+  let html = '';
+  if (data.shared.length) {
+    $('matcount').textContent = `${data.shared.length} always-on`;
+    html += `<p class="note" style="margin:.8rem 0 0">Always included for ${course}: ${data.shared.join(', ')}</p>`;
+  }
+  if (data.sessions.length) {
+    html += `<details style="margin-top:.8rem"><summary>Carry over from an earlier day</summary><div style="margin-top:.6rem">`;
+    for (const s of data.sessions) {
+      for (const f of s.files) {
+        const id = `${s.date}/${f}`;
+        html += `<label style="margin:0 0 .35rem;display:flex;gap:.45rem;align-items:center;cursor:pointer">
+          <input type="checkbox" class="reusebox" value="${id}" style="width:auto">
+          <span>${f} <span class="tag">${s.date}</span></span></label>`;
+      }
+    }
+    html += `</div></details>`;
+  }
+  $('reuse').innerHTML = html;
+}
+$('course').oninput = () => { clearTimeout(reuseTimer); reuseTimer = setTimeout(loadReusable, 300); };
+loadReusable();
+
+// --- recording ---
+// The recorder is rotated every SEGMENT_MS and each finished piece is uploaded
+// mid-class, so the server transcribes as the lecture happens instead of facing
+// the whole hour at the end. WebM chunks are not independently decodable, hence
+// rotating the whole recorder rather than slicing one continuous stream.
+const SEGMENT_MS = 120000;
+
+let recorder, stream, rotator, recording = false, segIndex = 0, base = '', pending = 0, transcribed = 0;
+
+// Rotation leaves a brief window where no recorder is active; stopping then throws.
+const stopIfRecording = () => recorder && recorder.state === 'recording' && recorder.stop();
+
+function startSegment() {
+  const parts = [];
+  recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+  recorder.ondataavailable = e => e.data.size && parts.push(e.data);
+  recorder.onstop = () => {
+    if (parts.length) sendSegment(new Blob(parts, { type: 'audio/webm' }), segIndex++);
+    if (recording) startSegment(); else finish();
+  };
+  recorder.start();
+}
+
+async function sendSegment(blob, index) {
+  pending++;
+  const fd = new FormData();
+  fd.append('index', index);
+  fd.append('audio', blob, `${index}.webm`);
+  try {
+    const r = await fetch(`${base}/segment`, { method: 'POST', body: fd });
+    const s = await r.json();
+    transcribed = s.done;
+  } catch { /* assemble_transcript on the server re-does anything missing */ }
+  pending--;
+}
+
+$('rec').onclick = async () => {
+  if (recording) {  // stop
+    recording = false;
+    clearInterval(rotator);
+    $('rec').disabled = true;
+    say('Finishing up…');
+    stopIfRecording();
+    return;
+  }
+
+  const course = $('course').value.trim();
+  if (!course) return say('Enter a course name first.', true);
+
+  try {
+    stream = $('mode').value === 'mic'
+      ? await navigator.mediaDevices.getUserMedia({ audio: true })
+      : await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  } catch (e) {
+    return say('Could not start capture: ' + e.message, true);
+  }
+
+  if (!stream.getAudioTracks().length) {
+    stream.getTracks().forEach(t => t.stop());
+    return say('No audio in that share — you need to tick the "share audio" box.', true);
+  }
+  // Screen share hands us video we do not want in the recording.
+  stream.getVideoTracks().forEach(t => { t.stop(); stream.removeTrack(t); });
+
+  const date = $('date').value;
+  base = `/api/session/${encodeURIComponent(course)}/${date}`;
+  await fetch('/api/session', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course, date }),
+  });
+
+  recording = true;
+  segIndex = 0;
+  startSegment();
+  rotator = setInterval(() => { if (recording) stopIfRecording(); }, SEGMENT_MS);  // onstop rotates
+
+  const started = Date.now();
+  let matMsg = '';
+  const tick = setInterval(() => {
+    if (!recording) return clearInterval(tick);
+    const s = Math.floor((Date.now() - started) / 1000);
+    const clock = `${String(s/60|0).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    const done = transcribed ? ` · ${transcribed} of ${segIndex} chunks transcribed` : '';
+    say(`<span class="rec-dot"></span>Recording — ${clock}${done}${matMsg}`);
+  }, 500);
+
+  $('rec').textContent = 'Stop recording';
+  $('rec').classList.remove('primary');
+  $('files').disabled = $('course').disabled = $('date').disabled = true;
+  // Browser's own "Stop sharing" button ends the track, not the recorder.
+  stream.getAudioTracks()[0].onended = () => {
+    if (recording) { recording = false; clearInterval(rotator); stopIfRecording(); }
+  };
+
+  // Recording is already running, so materials upload in the background
+  // and get parsed while the class happens.
+  sendMaterials(course).then(n => { matMsg = n ? ` · ${n} material${n > 1 ? 's' : ''} ready` : ''; })
+                       .catch(() => { matMsg = ' · materials failed to upload'; });
+};
+
+async function finish() {
+  stream.getTracks().forEach(t => t.stop());
+  while (pending) await new Promise(r => setTimeout(r, 300));  // let last uploads land
+  await fetch(`${base}/finish`, { method: 'POST' });
+  location.href = base.replace('/api', '');
+}
+
+async function sendMaterials(course) {
+  let n = 0;  // the session already exists: recording created it
+
+  const reuse = [...document.querySelectorAll('.reusebox:checked')].map(b => b.value);
+  if (reuse.length) {
+    await fetch(`${base}/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: reuse }),
+    });
+    n += reuse.length;
+  }
+
+  const picked = [...$('files').files];
+  if (picked.length) {
+    const fd = new FormData();
+    picked.forEach(f => fd.append('files', f));
+    const target = $('toshared').checked
+      ? `/api/course/${encodeURIComponent(course)}/shared`
+      : `${base}/materials`;
+    await fetch(target, { method: 'POST', body: fd });
+    n += picked.length;
+  }
+  return n;
+}
+</script>
+{% endblock %}

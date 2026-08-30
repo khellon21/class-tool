@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ course }} — {{ date }}{% endblock %}
+{% block body %}
+<p class="sub" style="margin-bottom:.5rem"><a href="/">← All sessions</a></p>
+<h1>{{ course }}</h1>
+<p class="sub">{{ date }}</p>
+
+{% if has_audio %}
+<audio controls src="/api/session/{{ course }}/{{ date }}/audio" style="width:100%"></audio>
+{% else %}
+<p class="sub">No recording in this session.</p>
+{% endif %}
+
+<h2>Class materials</h2>
+<div class="card">
+  {% if materials or shared %}
+    <div class="row" style="margin-bottom:1rem">
+      {% for m in materials %}<span class="tag">{{ m }}</span>{% endfor %}
+      {% for m in shared %}<span class="tag">{{ m }} · course-wide</span>{% endfor %}
+    </div>
+  {% endif %}
+  <div class="row">
+    <input type="file" id="files" multiple accept=".pdf,.pptx,.docx,.png,.jpg,.jpeg,.heic,.webp,.tiff" style="flex:1;min-width:200px">
+    <button id="upload">Add</button>
+  </div>
+  <div class="row" style="margin-top:.5rem">
+    <label style="margin:0;display:flex;align-items:center;gap:.4rem;cursor:pointer">
+      <input type="checkbox" id="toshared" style="width:auto">
+      Keep for every class in {{ course }}
+    </label>
+  </div>
+  <p class="note">Slides, handouts, readings, whiteboard photos. The notes follow their structure when present.</p>
+</div>
+
+<h2>Notes</h2>
+<div class="row" style="margin-bottom:1rem">
+  <button id="gen" class="primary">{{ 'Regenerate notes' if notes else 'Generate notes' }}</button>
+  <button id="save" {% if not notes %}disabled{% endif %}>Save edits</button>
+  <span id="status" class="status"></span>
+</div>
+<textarea id="notes" placeholder="Notes appear here once generated. Editable — hit Save edits to keep changes.">{{ notes }}</textarea>
+
+{% if transcript %}
+<h2>Transcript</h2>
+<details><summary>Show raw transcript</summary><pre>{{ transcript }}</pre></details>
+{% endif %}
+
+<script>
+const $ = id => document.getElementById(id);
+const API = `/api/session/{{ course }}/{{ date }}`;
+const say = (m, err) => { $('status').textContent = m; $('status').className = 'status' + (err ? ' err' : ''); };
+
+$('upload').onclick = async () => {
+  if (!$('files').files.length) return say('Pick some files first.', true);
+  const fd = new FormData();
+  for (const f of $('files').files) fd.append('files', f);
+  say('Uploading…');
+  const target = $('toshared').checked
+    ? `/api/course/{{ course }}/shared`
+    : `${API}/materials`;
+  const r = await fetch(target, { method: 'POST', body: fd });
+  r.ok ? location.reload() : say('Upload failed.', true);
+};
+
+// Most of the transcript is done during class; show what is left.
+(async function pollStatus() {
+  if ($('notes').value.trim()) return;  // already generated
+  try {
+    const s = await fetch(`${API}/status`).then(r => r.json());
+    if (s.total) {
+      if (s.done < s.total) {
+        say(`Transcribing — ${s.done} of ${s.total} chunks done…`);
+        return setTimeout(pollStatus, 3000);
+      }
+      say('Transcript ready. Generate notes when you have added your materials.');
+    }
+  } catch { /* status is a convenience; Generate still works */ }
+})();
+
+$('gen').onclick = async () => {
+  $('gen').disabled = true;
+  say('Writing notes…');
+  try {
+    const r = await fetch(`${API}/generate`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    $('notes').value = data.notes;
+    $('save').disabled = false;
+    say('Done.');
+  } catch (e) {
+    say(e.message, true);
+  }
+  $('gen').disabled = false;
+};
+
+$('save').onclick = async () => {
+  await fetch(`${API}/notes`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: $('notes').value }),
+  });
+  say('Saved.');
+};
+</script>
+{% endblock %}
