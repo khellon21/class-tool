@@ -1,56 +1,164 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="view-transition" content="same-origin" />
 <title>{% block title %}Class Notes{% endblock %}</title>
+
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+
+<script id="tailwind-config">
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            "colors": {
+                "on-background": "#dae2fd",
+                "background": "#0b1326",
+                "tertiary": "#adc6ff",
+                "on-error": "#690005",
+                "on-tertiary-fixed-variant": "#004395",
+                "on-surface": "#dae2fd",
+                "on-surface-variant": "#cbc3d7",
+                "surface-tint": "#d0bcff",
+                "surface-container-high": "#222a3d",
+                "on-primary-fixed-variant": "#5516be",
+                "surface-bright": "#31394d",
+                "surface": "#0b1326",
+                "on-secondary-fixed-variant": "#004e5c",
+                "tertiary-fixed-dim": "#adc6ff",
+                "outline": "#958ea0",
+                "on-secondary-container": "#00424e",
+                "surface-container-highest": "#2d3449",
+                "secondary-fixed-dim": "#4cd7f6",
+                "secondary-fixed": "#acedff",
+                "primary-container": "#a078ff",
+                "on-primary-fixed": "#23005c",
+                "on-primary-container": "#340080",
+                "on-tertiary-container": "#00285d",
+                "secondary": "#4cd7f6",
+                "error-container": "#93000a",
+                "surface-container-low": "#131b2e",
+                "primary-fixed": "#e9ddff",
+                "surface-container": "#171f33",
+                "on-error-container": "#ffdad6",
+                "inverse-on-surface": "#283044",
+                "primary-fixed-dim": "#d0bcff",
+                "primary": "#d0bcff",
+                "secondary-container": "#03b5d3",
+                "tertiary-fixed": "#d8e2ff",
+                "inverse-primary": "#6d3bd7",
+                "inverse-surface": "#dae2fd",
+                "surface-dim": "#0b1326",
+                "on-tertiary-fixed": "#001a42",
+                "tertiary-container": "#4d8eff",
+                "on-secondary-fixed": "#001f26",
+                "outline-variant": "#494454",
+                "surface-container-lowest": "#060e20",
+                "on-primary": "#3c0091",
+                "on-secondary": "#003640",
+                "surface-variant": "#2d3449",
+                "error": "#ffb4ab",
+                "on-tertiary": "#002e6a"
+            },
+            "fontFamily": {
+                "display-lg-mobile": ["Hanken Grotesk"],
+                "headline-md": ["Hanken Grotesk"],
+                "label-sm": ["JetBrains Mono"],
+                "body-md": ["Inter"],
+                "display-lg": ["Hanken Grotesk"],
+                "body-lg": ["Inter"]
+            },
+            "animation": {
+                "pulse-glow": "pulseGlow 2s infinite",
+                "fade-in-up": "fadeInUp 0.8s ease-out forwards",
+                "pulse-amber": "pulseAmber 2s infinite",
+                "fade-in": "fadeIn 0.5s ease-out"
+            },
+            "keyframes": {
+                pulseGlow: {
+                    "0%, 100%": { boxShadow: "0 0 10px rgba(160, 120, 255, 0.4), 0 0 20px rgba(160, 120, 255, 0.2)" },
+                    "50%": { boxShadow: "0 0 25px rgba(160, 120, 255, 0.8), 0 0 40px rgba(160, 120, 255, 0.5)" }
+                },
+                fadeInUp: {
+                    "0%": { opacity: "0", transform: "translateY(20px)" },
+                    "100%": { opacity: "1", transform: "translateY(0)" }
+                },
+                pulseAmber: {
+                    "0%, 100%": { opacity: "1" },
+                    "50%": { opacity: "0.5" }
+                },
+                fadeIn: {
+                    "0%": { opacity: "0" },
+                    "100%": { opacity: "1" }
+                }
+            }
+        }
+    }
+}
+</script>
 <style>
-  :root {
-    --bg: #fbfaf8; --fg: #1c1b19; --muted: #6b6862; --line: #e3e0da;
-    --card: #fff; --accent: #b8543a; --accent-fg: #fff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#16150f; --fg:#eceae4; --muted:#9a968c; --line:#302e26;
-            --card:#1e1d16; --accent:#d9765a; --accent-fg:#16150f; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 ui-sans-serif, -apple-system, system-ui, sans-serif; }
-  main { max-width: 820px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-  h1 { font-size:1.6rem; margin:0 0 .25rem; letter-spacing:-.02em; }
-  h2 { font-size:1.1rem; margin:2.5rem 0 .75rem; letter-spacing:-.01em; }
-  a { color:inherit; }
-  .sub { color:var(--muted); margin:0 0 2rem; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.25rem; }
-  button, .btn { font:inherit; padding:.55rem 1rem; border-radius:8px; border:1px solid var(--line);
-                 background:var(--card); color:var(--fg); cursor:pointer; }
-  button:hover:not(:disabled), .btn:hover { border-color:var(--muted); }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button.primary { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
-  input, select, textarea { font:inherit; color:var(--fg); background:var(--bg);
-                            border:1px solid var(--line); border-radius:8px; padding:.55rem .7rem; }
-  input, select { width:100%; }
-  label { display:block; font-size:.85rem; color:var(--muted); margin-bottom:.3rem; }
-  .row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
-  .grid { display:grid; gap:.9rem; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
-  .list { list-style:none; padding:0; margin:0; }
-  .list li a { display:flex; justify-content:space-between; gap:1rem; align-items:center;
-               padding:.85rem 1rem; border:1px solid var(--line); border-radius:10px;
-               background:var(--card); margin-bottom:.5rem; text-decoration:none; }
-  .list li a:hover { border-color:var(--muted); }
-  .tag { font-size:.75rem; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:.1rem .55rem; }
-  .status { color:var(--muted); font-size:.9rem; min-height:1.4em; }
-  .status.err { color:var(--accent); }
-  .rec-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--accent);
-             margin-right:.4rem; animation:pulse 1.2s infinite; }
-  @keyframes pulse { 50% { opacity:.25; } }
-  .note { font-size:.85rem; color:var(--muted); border-left:2px solid var(--line); padding-left:.8rem; margin:.9rem 0 0; }
-  textarea { width:100%; min-height:420px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.87rem; line-height:1.65; }
-  pre { white-space:pre-wrap; word-wrap:break-word; background:var(--card); border:1px solid var(--line);
-        border-radius:10px; padding:1rem; font-size:.85rem; max-height:400px; overflow:auto; }
-  details summary { cursor:pointer; color:var(--muted); }
+    body {
+        background-color: #0F172A;
+        background-image: radial-gradient(circle at 50% 0%, #1a2235 0%, #0b1326 100%);
+        color: #dae2fd;
+        min-height: max(884px, 100dvh);
+    }
+    
+    /* View Transitions API */
+    @view-transition {
+      navigation: auto;
+    }
+    ::view-transition-old(root) {
+      animation: 0.4s ease-in-out both fade-out;
+    }
+    ::view-transition-new(root) {
+      animation: 0.4s ease-in-out both fade-in;
+    }
+    @keyframes fade-out { to { opacity: 0; transform: translateY(-10px); } }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } }
+
+    /* Glass Input Styles */
+    .glass-input {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.3s ease;
+    }
+    .glass-input:focus {
+        background: rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid #d0bcff;
+        outline: none;
+        box-shadow: 0 4px 20px rgba(208, 188, 255, 0.1);
+    }
+    
+    .inner-glow-panel {
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    .delay-100 { animation-delay: 100ms; }
+    .delay-200 { animation-delay: 200ms; }
+    .delay-300 { animation-delay: 300ms; }
 </style>
 </head>
-<body>
-<main>{% block body %}{% endblock %}</main>
+<body class="min-h-screen font-[Inter] overflow-x-hidden pb-24 md:pb-0">
+  <header class="fixed top-0 w-full z-50 bg-white/3 dark:bg-white/3 backdrop-blur-md border-b border-white/10 inner-glow shadow-sm transition-all duration-300">
+      <div class="flex items-center justify-between px-6 h-16 w-full max-w-7xl mx-auto">
+          <a href="/" class="text-on-surface-variant font-medium hover:bg-white/10 transition-colors scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
+              <span class="material-symbols-outlined" data-icon="home">home</span>
+          </a>
+          <h1 class="font-[Hanken_Grotesk] text-[24px] md:text-[28px] tracking-tight text-on-surface flex-1 text-center font-bold" style="view-transition-name: app-title;">
+              Nexus Notes
+          </h1>
+          <div class="w-10"></div>
+      </div>
+  </header>
+
+  <main class="pt-24 px-4 md:px-6 max-w-7xl mx-auto pb-12">
+      {% block body %}{% endblock %}
+  </main>
 </body>
 </html>
