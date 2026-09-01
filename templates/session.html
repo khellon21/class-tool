@@ -1,54 +1,191 @@
 {% extends "base.html" %}
 {% block title %}{{ course }} — {{ date }}{% endblock %}
 {% block body %}
-<p class="sub" style="margin-bottom:.5rem"><a href="/">← All sessions</a></p>
-<h1>{{ course }}</h1>
-<p class="sub">{{ date }}</p>
-
-{% if has_audio %}
-<audio controls src="/api/session/{{ course }}/{{ date }}/audio" style="width:100%"></audio>
-{% else %}
-<p class="sub">No recording in this session.</p>
-{% endif %}
-
-<h2>Class materials</h2>
-<div class="card">
-  {% if materials or shared %}
-    <div class="row" style="margin-bottom:1rem">
-      {% for m in materials %}<span class="tag">{{ m }}</span>{% endfor %}
-      {% for m in shared %}<span class="tag">{{ m }} · course-wide</span>{% endfor %}
+<div class="animate-fade-in-up">
+    <!-- Header Area -->
+    <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+            <a href="/" class="inline-flex items-center gap-1 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors mb-4 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
+                <span class="material-symbols-outlined text-[16px]">arrow_back</span> All sessions
+            </a>
+            <h1 class="text-4xl font-display-lg font-bold text-on-surface tracking-tight" style="view-transition-name: course-{{ course|replace(' ', '-') }}-{{ date }};">{{ course }}</h1>
+            <p class="text-lg text-secondary font-label-sm mt-1">{{ date }}</p>
+        </div>
+        
+        {% if has_audio %}
+        <div class="bg-white/5 border border-white/10 rounded-full p-2 backdrop-blur-md inner-glow-panel w-full md:w-auto">
+            <audio controls src="/api/session/{{ course|urlencode }}/{{ date|urlencode }}/audio" class="w-full md:w-[300px] h-10 outline-none"></audio>
+        </div>
+        {% else %}
+        <div class="bg-white/5 border border-white/10 rounded-full px-6 py-3 backdrop-blur-md">
+            <p class="text-sm text-on-surface-variant flex items-center gap-2">
+                <span class="material-symbols-outlined text-[18px]">mic_off</span> No recording in this session.
+            </p>
+        </div>
+        {% endif %}
     </div>
-  {% endif %}
-  <div class="row">
-    <input type="file" id="files" multiple accept=".pdf,.pptx,.docx,.png,.jpg,.jpeg,.heic,.webp,.tiff" style="flex:1;min-width:200px">
-    <button id="upload">Add</button>
-  </div>
-  <div class="row" style="margin-top:.5rem">
-    <label style="margin:0;display:flex;align-items:center;gap:.4rem;cursor:pointer">
-      <input type="checkbox" id="toshared" style="width:auto">
-      Keep for every class in {{ course }}
-    </label>
-  </div>
-  <p class="note">Slides, handouts, readings, whiteboard photos. The notes follow their structure when present.</p>
-</div>
 
-<h2>Notes</h2>
-<div class="row" style="margin-bottom:1rem">
-  <button id="gen" class="primary">{{ 'Regenerate notes' if notes else 'Generate notes' }}</button>
-  <button id="save" {% if not notes %}disabled{% endif %}>Save edits</button>
-  <span id="status" class="status"></span>
-</div>
-<textarea id="notes" placeholder="Notes appear here once generated. Editable — hit Save edits to keep changes.">{{ notes }}</textarea>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Main Content: Notes & Transcript -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            <div class="bg-white/5 border border-white/10 rounded-3xl p-6 md:p-8 backdrop-blur-xl inner-glow-panel shadow-2xl">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h2 class="text-2xl font-display-lg font-semibold text-on-surface flex items-center gap-2">
+                        <span class="material-symbols-outlined text-primary">edit_note</span> Notes
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span id="status" class="status text-sm min-h-[20px] font-medium text-tertiary"></span>
+                        <div class="flex bg-black/30 border border-white/10 rounded-full p-1">
+                            <button id="tab-preview" class="tab text-xs font-medium py-1.5 px-4 rounded-full transition-all duration-200">Preview</button>
+                            <button id="tab-edit" class="tab text-xs font-medium py-1.5 px-4 rounded-full transition-all duration-200">Edit</button>
+                        </div>
+                        <button id="save" class="bg-white/10 hover:bg-white/20 text-on-surface border border-white/20 font-medium py-2 px-6 rounded-full transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed" {% if not notes %}disabled{% endif %}>
+                            Save edits
+                        </button>
+                        <button id="gen" class="primary bg-gradient-to-r from-primary to-inverse-primary hover:shadow-[0_0_20px_rgba(208,188,255,0.4)] text-on-primary font-bold py-2 px-6 rounded-full transition-all duration-300">
+                            {{ 'Regenerate notes' if notes else 'Generate notes' }}
+                        </button>
+                    </div>
+                </div>
 
-{% if transcript %}
-<h2>Transcript</h2>
-<details><summary>Show raw transcript</summary><pre>{{ transcript }}</pre></details>
-{% endif %}
+                <div id="progress" class="hidden mb-5">
+                    <div class="flex items-center justify-between text-xs mb-2">
+                        <span id="progress-label" class="text-tertiary font-medium">Writing notes…</span>
+                        <span id="progress-time" class="font-label-sm text-on-surface-variant tabular-nums">00:00</span>
+                    </div>
+                    <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                        <div id="progress-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-primary to-secondary transition-[width] duration-300 ease-linear"></div>
+                    </div>
+                </div>
+
+                <article id="preview" class="prose prose-invert prose-headings:font-[Hanken_Grotesk] prose-a:text-tertiary prose-code:text-secondary prose-pre:bg-black/40 max-w-none w-full min-h-[500px] max-h-[70vh] overflow-auto rounded-2xl px-6 py-5 bg-black/20 border border-white/10 leading-relaxed"></article>
+                <textarea id="notes" placeholder="Notes appear here once generated. Editable — hit Save edits to keep changes." class="hidden glass-input w-full min-h-[500px] rounded-2xl px-6 py-5 text-on-surface font-body-md transition-all focus:ring-0 leading-relaxed resize-y bg-black/20">{{ notes }}</textarea>
+            </div>
+
+            {% if transcript %}
+            <details class="group bg-white/5 border border-white/10 rounded-3xl backdrop-blur-xl inner-glow-panel overflow-hidden">
+                <summary class="cursor-pointer p-6 text-lg font-display-lg font-medium text-on-surface flex items-center justify-between hover:bg-white/5 transition-colors">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-secondary">subtitles</span> Show raw transcript
+                    </div>
+                    <span class="material-symbols-outlined group-open:-rotate-180 transition-transform">expand_more</span>
+                </summary>
+                <div class="p-6 border-t border-white/10 bg-black/40">
+                    <pre class="text-sm text-on-surface-variant font-label-sm whitespace-pre-wrap break-words h-[400px] overflow-auto leading-relaxed">{{ transcript }}</pre>
+                </div>
+            </details>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar: Materials -->
+        <div class="flex flex-col gap-6">
+            <div class="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-xl inner-glow-panel">
+                <h2 class="text-xl font-display-lg font-semibold text-on-surface mb-6 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-tertiary">folder_open</span> Class materials
+                </h2>
+                
+                {% if materials or shared %}
+                <div class="flex flex-wrap gap-2 mb-6">
+                    {% for m in materials %}
+                    <span class="text-xs font-label-sm uppercase tracking-wider pl-3 pr-1.5 py-1.5 rounded-full bg-tertiary/10 border border-tertiary/20 text-tertiary max-w-full flex items-center gap-1" title="{{ m }}">
+                        <span class="material-symbols-outlined text-[14px]">draft</span>
+                        <span class="truncate">{{ m }}</span>
+                        <button class="del hover:bg-tertiary/20 rounded-full p-0.5 transition-colors shrink-0" data-scope="session" data-name="{{ m }}" aria-label="Remove {{ m }}" title="Remove {{ m }}">
+                            <span class="material-symbols-outlined text-[14px] block">close</span>
+                        </button>
+                    </span>
+                    {% endfor %}
+                    {% for m in shared %}
+                    <span class="text-xs font-label-sm uppercase tracking-wider pl-3 pr-1.5 py-1.5 rounded-full bg-secondary/10 border border-secondary/20 text-secondary max-w-full flex items-center gap-1" title="{{ m }}">
+                        <span class="material-symbols-outlined text-[14px]">link</span>
+                        <span class="truncate">{{ m }}</span>
+                        <button class="del hover:bg-secondary/20 rounded-full p-0.5 transition-colors shrink-0" data-scope="shared" data-name="{{ m }}" aria-label="Remove {{ m }} from the whole course" title="Remove {{ m }} from every class in {{ course }}">
+                            <span class="material-symbols-outlined text-[14px] block">close</span>
+                        </button>
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="flex flex-col gap-4">
+                    <div class="flex flex-col xl:flex-row gap-3">
+                        <input type="file" id="files" multiple accept=".pdf,.pptx,.docx,.md,.markdown,.txt,.png,.jpg,.jpeg,.heic,.webp,.tiff" class="block w-full text-sm text-on-surface-variant file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-tertiary/10 file:text-tertiary hover:file:bg-tertiary/20 transition-all cursor-pointer">
+                        <button id="upload" class="bg-white/10 hover:bg-white/20 text-on-surface border border-white/20 font-medium py-2 px-6 rounded-full transition-all duration-300 whitespace-nowrap">Add</button>
+                    </div>
+                    
+                    <label class="flex items-center gap-3 cursor-pointer group mt-2">
+                        <div class="relative flex items-center">
+                            <input type="checkbox" id="toshared" class="peer h-5 w-5 rounded border-white/20 bg-white/5 checked:bg-tertiary checked:border-tertiary focus:ring-tertiary focus:ring-offset-surface">
+                        </div>
+                        <span class="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">Keep for every class in <strong class="text-on-surface font-medium">{{ course }}</strong></span>
+                    </label>
+                </div>
+                
+                <p class="text-xs text-on-surface-variant/70 mt-6 flex items-start gap-2 border-l-2 border-tertiary/50 pl-3">
+                    <span class="material-symbols-outlined text-[16px] shrink-0">info</span>
+                    <span>Slides, handouts, readings, whiteboard photos. The notes follow their structure when present.</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
-const API = `/api/session/{{ course }}/{{ date }}`;
-const say = (m, err) => { $('status').textContent = m; $('status').className = 'status' + (err ? ' err' : ''); };
+const API = `/api/session/{{ course|urlencode }}/{{ date|urlencode }}`;
+const say = (m, err) => { $('status').textContent = m; $('status').className = 'status text-sm min-h-[20px] font-medium text-center sm:text-right ' + (err ? 'text-error' : 'text-tertiary'); };
+
+// --- rendered markdown, the way the .md would read on GitHub ---
+const render = () => {
+  const src = $('notes').value.trim();
+  if (!src) {
+    $('preview').innerHTML = '<p class="text-on-surface-variant/60 not-prose">No notes yet — hit Generate notes.</p>';
+  } else if (window.marked && window.DOMPurify) {
+    // sanitize: the markdown comes from a model reading uploaded files, so it is not trusted HTML
+    $('preview').innerHTML = DOMPurify.sanitize(marked.parse(src, { breaks: true }));
+  } else {
+    $('preview').textContent = src;  // CDN unreachable: raw text still beats a blank panel
+  }
+};
+
+const ON = 'bg-primary text-on-primary', OFF = 'text-on-surface-variant hover:text-on-surface';
+function show(mode) {
+  const editing = mode === 'edit';
+  $('notes').classList.toggle('hidden', !editing);
+  $('preview').classList.toggle('hidden', editing);
+  $('tab-edit').className = `tab text-xs font-medium py-1.5 px-4 rounded-full transition-all duration-200 ${editing ? ON : OFF}`;
+  $('tab-preview').className = `tab text-xs font-medium py-1.5 px-4 rounded-full transition-all duration-200 ${editing ? OFF : ON}`;
+  if (!editing) render();
+}
+$('tab-edit').onclick = () => show('edit');
+$('tab-preview').onclick = () => show('preview');
+show('preview');
+
+// --- progress bar: the server cannot report real progress, so pace it off a measured ETA ---
+const ETA_MS = 190000;  // a full lecture took ~3min on deepseek-v4-flash; tune if you change NOTES_MODEL
+let progTimer;
+
+function startProgress() {
+  const t0 = Date.now();
+  $('progress').classList.remove('hidden');
+  $('progress-bar').style.width = '0%';
+  const tick = () => {
+    const ms = Date.now() - t0, sec = Math.floor(ms / 1000);
+    // creep to 95% over the ETA, then hold - never claim done before the server says so
+    $('progress-bar').style.width = Math.min(95, (ms / ETA_MS) * 95) + '%';
+    $('progress-time').textContent = `${String(sec / 60 | 0).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+    $('progress-label').textContent = ms > ETA_MS ? 'Still writing — long lecture…' : 'Writing notes…';
+  };
+  tick();
+  progTimer = setInterval(tick, 250);
+}
+
+function stopProgress(ok) {
+  clearInterval(progTimer);
+  if (!ok) return $('progress').classList.add('hidden');
+  $('progress-bar').style.width = '100%';
+  setTimeout(() => $('progress').classList.add('hidden'), 700);
+}
 
 $('upload').onclick = async () => {
   if (!$('files').files.length) return say('Pick some files first.', true);
@@ -56,10 +193,22 @@ $('upload').onclick = async () => {
   for (const f of $('files').files) fd.append('files', f);
   say('Uploading…');
   const target = $('toshared').checked
-    ? `/api/course/{{ course }}/shared`
+    ? `/api/course/{{ course|urlencode }}/shared`
     : `${API}/materials`;
   const r = await fetch(target, { method: 'POST', body: fd });
   r.ok ? location.reload() : say('Upload failed.', true);
+};
+
+for (const b of document.querySelectorAll('.del')) b.onclick = async () => {
+  const { scope, name } = b.dataset;
+  const where = scope === 'shared' ? `every class in {{ course }}` : 'this session';
+  if (!confirm(`Delete "${name}" from ${where}? This removes the file.`)) return;
+  say('Deleting…');
+  const url = scope === 'shared'
+    ? `/api/course/{{ course|urlencode }}/shared/${encodeURIComponent(name)}`
+    : `${API}/materials/${encodeURIComponent(name)}`;
+  const r = await fetch(url, { method: 'DELETE' });
+  r.ok ? location.reload() : say('Could not delete that file.', true);
 };
 
 // Most of the transcript is done during class; show what is left.
@@ -79,15 +228,19 @@ $('upload').onclick = async () => {
 
 $('gen').onclick = async () => {
   $('gen').disabled = true;
-  say('Writing notes…');
+  say('');
+  startProgress();
   try {
     const r = await fetch(`${API}/generate`, { method: 'POST' });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error);
     $('notes').value = data.notes;
     $('save').disabled = false;
+    stopProgress(true);
+    show('preview');
     say('Done.');
   } catch (e) {
+    stopProgress(false);
     say(e.message, true);
   }
   $('gen').disabled = false;
@@ -98,6 +251,7 @@ $('save').onclick = async () => {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes: $('notes').value }),
   });
+  render();
   say('Saved.');
 };
 </script>

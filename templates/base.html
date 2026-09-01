@@ -3,10 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <meta name="view-transition" content="same-origin" />
 <title>{% block title %}Class Notes{% endblock %}</title>
 
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 
@@ -102,10 +105,10 @@ tailwind.config = {
 </script>
 <style>
     body {
-        background-color: #0F172A;
+        background-color: #0b1326;
         background-image: radial-gradient(circle at 50% 0%, #1a2235 0%, #0b1326 100%);
         color: #dae2fd;
-        min-height: max(884px, 100dvh);
+        min-height: 100dvh;
     }
     
     /* View Transitions API */
@@ -145,14 +148,14 @@ tailwind.config = {
 </style>
 </head>
 <body class="min-h-screen font-[Inter] overflow-x-hidden pb-24 md:pb-0">
-  <header class="fixed top-0 w-full z-50 bg-white/3 dark:bg-white/3 backdrop-blur-md border-b border-white/10 inner-glow shadow-sm transition-all duration-300">
+  <header class="fixed top-0 w-full z-50 bg-white/3 dark:bg-white/3 backdrop-blur-md border-b border-white/10 inner-glow-panel shadow-sm transition-all duration-300">
       <div class="flex items-center justify-between px-6 h-16 w-full max-w-7xl mx-auto">
           <a href="/" class="text-on-surface-variant font-medium hover:bg-white/10 transition-colors scale-95 duration-200 p-2 rounded-full flex items-center justify-center">
               <span class="material-symbols-outlined" data-icon="home">home</span>
           </a>
-          <h1 class="font-[Hanken_Grotesk] text-[24px] md:text-[28px] tracking-tight text-on-surface flex-1 text-center font-bold" style="view-transition-name: app-title;">
+          <p class="font-[Hanken_Grotesk] text-[24px] md:text-[28px] tracking-tight text-on-surface flex-1 text-center font-bold" style="view-transition-name: app-title;">
               Nexus Notes
-          </h1>
+          </p>
           <div class="w-10"></div>
       </div>
   </header>

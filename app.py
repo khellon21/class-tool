@@ -19,7 +19,10 @@ WHISPER_MODEL = ROOT / "models" / os.environ.get("WHISPER_MODEL", "ggml-small.en
 SHARED = "_shared"  # per-course materials folder, included in every session
 WHISPER_LOCK = threading.Lock()  # one Whisper process at a time on an 8GB machine
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_MODEL = os.environ.get("NOTES_MODEL", "deepseek-ai/deepseek-v4-pro-0813")
+NVIDIA_MODEL = os.environ.get("NOTES_MODEL", "deepseek-ai/deepseek-v4-flash-0731")
+# A whole lecture is a long generation, but a model that is listed and not actually
+# serving accepts the connection and never answers - cap the wait instead of hanging.
+NOTES_TIMEOUT = float(os.environ.get("NOTES_TIMEOUT", 600))
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2GB, a long lecture recording
@@ -47,6 +50,17 @@ def save_uploads(files, dest):
         name = Path(f.filename).name  # strip any directory component from the browser
         if name and not name.startswith("."):
             f.save(dest / name)
+
+
+def delete_material(directory, name):
+    """Remove one uploaded material. Refuses anything that is not a plain
+    filename sitting directly in `directory`."""
+    if Path(name).name != name or not name or name.startswith("."):
+        abort(400, "bad file name")
+    target = directory / name
+    if not target.is_file():
+        abort(404)
+    target.unlink()
 
 
 def list_sessions():
@@ -244,6 +258,24 @@ def build_prompt(transcript, material_text):
     )
 
 
+def notes_text(message, finish_reason=None):
+    """The notes out of a chat response.
+
+    These models put their scratch work in `reasoning_content` and the answer
+    in `content`. When the token budget runs out mid-thought `content` comes
+    back null - a truncated run, not notes, and not something to write to disk.
+    """
+    text = (getattr(message, "content", None) or "").strip()
+    if text:
+        return text
+    if finish_reason == "length":
+        raise RuntimeError(
+            "The model spent its whole token budget thinking and returned no notes. "
+            "Try again, or set NOTES_MODEL in .env to a different model."
+        )
+    raise RuntimeError(f"The model returned an empty response (finish_reason: {finish_reason}).")
+
+
 def generate_notes(session):
     from openai import OpenAI
 
@@ -255,14 +287,16 @@ def generate_notes(session):
     if not transcript:
         raise RuntimeError("Transcript came back empty - check that the recording captured audio.")
 
-    client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=key)
+    # max_retries=0: the SDK retries timeouts too, which only doubles the wait
+    # when the model is the thing that is not answering.
+    client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=key, timeout=NOTES_TIMEOUT, max_retries=0)
     resp = client.chat.completions.create(
         model=NVIDIA_MODEL,
         messages=[{"role": "user", "content": build_prompt(transcript, extract_materials(session))}],
         temperature=0.3,
         max_tokens=16000,
     )
-    notes = resp.choices[0].message.content
+    notes = notes_text(resp.choices[0].message, resp.choices[0].finish_reason)
     (session / "notes.md").write_text(notes)
     return notes
 
@@ -360,6 +394,20 @@ def upload_materials(course, date):
     save_uploads(request.files.getlist("files"), d / "materials")
     prefetch_materials(d)
     return jsonify(files=[p.name for p in mat.readable_files(d / "materials")])
+
+
+@app.delete("/api/session/<course>/<date>/materials/<name>")
+def remove_material(course, date, name):
+    d = session_dir(course, date)
+    delete_material(d / "materials", name)
+    return jsonify(files=[p.name for p in mat.readable_files(d / "materials")])
+
+
+@app.delete("/api/course/<course>/shared/<name>")
+def remove_shared(course, name):
+    d = course_dir(course) / SHARED
+    delete_material(d, name)
+    return jsonify(shared=[p.name for p in mat.readable_files(d)])
 
 
 @app.post("/api/session/<course>/<date>/import")

@@ -38,6 +38,17 @@ def test_extract_docx_and_pptx():
     assert "\n\n\n" not in out, "blank paragraphs should not produce empty lines"
 
 
+def test_markdown_and_text_materials_are_readable():
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        (d / "reading.md").write_text("# Chapter 3\nNormalization rules.")
+        (d / "outline.txt").write_text("plain text notes")
+        assert [p.name for p in mat.readable_files(d)] == ["outline.txt", "reading.md"]
+        out = mat.extract_all(d)
+    assert "Normalization rules." in out and "reading.md" in out
+    assert "plain text notes" in out
+
+
 def test_unknown_extension_is_skipped():
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
@@ -282,6 +293,57 @@ def test_course_dir_rejects_reserved_and_traversal_names():
             except Exception as e:
                 assert "400" in str(e) or "bad" in str(e).lower()
         assert course_dir("CS101").name == "CS101"
+
+
+def test_delete_material_removes_only_a_plain_filename():
+    with tempfile.TemporaryDirectory() as tmp, app.test_request_context():
+        d = Path(tmp) / "materials"
+        d.mkdir()
+        (d / "slides.pdf").write_text("keep")
+        (d / "junk.md").write_text("remove")
+        (Path(tmp) / "meta.json").write_text("must survive")
+
+        appmod.delete_material(d, "junk.md")
+        assert not (d / "junk.md").exists()
+        assert (d / "slides.pdf").exists(), "deleting one file leaves the others"
+
+        for bad in ["..", "../meta.json", "a/b", "", ".DS_Store", "gone.pdf"]:
+            try:
+                appmod.delete_material(d, bad)
+                raise AssertionError(f"should have rejected {bad!r}")
+            except AssertionError:
+                raise
+            except Exception as e:
+                assert "400" in str(e) or "404" in str(e), f"{bad!r} -> {e}"
+        assert (Path(tmp) / "meta.json").exists(), "nothing escapes the materials folder"
+
+
+class FakeMessage:
+    def __init__(self, content, reasoning_content=""):
+        self.content = content
+        self.reasoning_content = reasoning_content
+
+
+def test_notes_text_rejects_a_response_that_carries_no_notes():
+    """These models think in `reasoning_content` and answer in `content`.
+    When the token budget runs out mid-thought `content` comes back null -
+    that is a truncated run, not notes, and it must not reach write_text()."""
+    good = FakeMessage("## Summary\nNormalization.", reasoning_content="1. The user wants")
+    assert appmod.notes_text(good, "stop") == "## Summary\nNormalization."
+
+    for message, reason in [
+        (FakeMessage(None, reasoning_content="1. The user wants"), "length"),
+        (FakeMessage("", reasoning_content=""), "stop"),
+        (FakeMessage("   "), "stop"),
+    ]:
+        try:
+            appmod.notes_text(message, reason)
+            raise AssertionError(f"should have rejected {message.content!r}")
+        except AssertionError:
+            raise
+        except RuntimeError as e:
+            assert str(e), "the failure has to explain itself to the user"
+            assert "NoneType" not in str(e), "not a raw TypeError"
 
 
 if __name__ == "__main__":

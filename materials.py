@@ -41,7 +41,16 @@ def from_image(path):
     return "\n".join(text for text, _conf, _box in lines)
 
 
-EXTRACTORS = {".pdf": from_pdf, ".pptx": from_pptx, ".docx": from_docx}
+def from_text(path):
+    """Markdown and plain text are already text - errors="replace" so a stray
+    byte from someone else's editor is not a failed upload."""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+EXTRACTORS = {
+    ".pdf": from_pdf, ".pptx": from_pptx, ".docx": from_docx,
+    ".md": from_text, ".markdown": from_text, ".txt": from_text,
+}
 
 
 def readable_files(directory):
