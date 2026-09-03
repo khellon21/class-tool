@@ -7,9 +7,10 @@
 <meta name="view-transition" content="same-origin" />
 <title>{% block title %}Class Notes{% endblock %}</title>
 
-<script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<!-- vendored: the app has to work in a lecture hall with no wifi and behind blockers -->
+<script src="{{ url_for('static', filename='tailwind.js') }}"></script>
+<script src="{{ url_for('static', filename='marked.min.js') }}"></script>
+<script src="{{ url_for('static', filename='purify.min.js') }}"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
 
