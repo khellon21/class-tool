@@ -2,13 +2,15 @@
 import os
 import re
 import json
+import time
 import shutil
 import threading
 import subprocess
 import datetime
 from pathlib import Path
 
-from flask import Flask, request, jsonify, render_template, send_from_directory, abort
+from flask import (Flask, Response, request, jsonify, render_template,
+                   send_from_directory, stream_with_context, abort)
 
 import materials as mat
 
@@ -259,14 +261,14 @@ def build_prompt(transcript, material_text):
     )
 
 
-def notes_text(message, finish_reason=None):
-    """The notes out of a chat response.
+def notes_text(text, finish_reason=None):
+    """Guard what reaches notes.md.
 
     These models put their scratch work in `reasoning_content` and the answer
-    in `content`. When the token budget runs out mid-thought `content` comes
-    back null - a truncated run, not notes, and not something to write to disk.
+    in `content`. When the token budget runs out mid-thought no `content` ever
+    arrives - a truncated run, not notes, and not something to write to disk.
     """
-    text = (getattr(message, "content", None) or "").strip()
+    text = (text or "").strip()
     if text:
         return text
     if finish_reason == "length":
@@ -278,6 +280,14 @@ def notes_text(message, finish_reason=None):
 
 
 def generate_notes(session):
+    """Write notes for one session and return them.
+
+    The completion is streamed because a whole lecture outlives NVIDIA's ~300s
+    gateway cap when the answer comes back in one piece - measured: a
+    non-streamed request dies at 302s with a 504, the same prompt streams to
+    completion in 416s. The gateway times out on silence, and each chunk
+    resets that clock.
+    """
     from openai import OpenAI
 
     key = os.environ.get("NVIDIA_API_KEY")
@@ -291,13 +301,18 @@ def generate_notes(session):
     # max_retries=0: the SDK retries timeouts too, which only doubles the wait
     # when the model is the thing that is not answering.
     client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=key, timeout=NOTES_TIMEOUT, max_retries=0)
-    resp = client.chat.completions.create(
+    parts, finish = [], None
+    for chunk in client.chat.completions.create(
         model=NVIDIA_MODEL,
         messages=[{"role": "user", "content": build_prompt(transcript, extract_materials(session))}],
         temperature=0.3,
         max_tokens=16000,
-    )
-    notes = notes_text(resp.choices[0].message, resp.choices[0].finish_reason)
+        stream=True,
+    ):
+        if chunk.choices:  # a usage-only trailing chunk carries none
+            finish = chunk.choices[0].finish_reason or finish
+            parts.append(chunk.choices[0].delta.content or "")
+    notes = notes_text("".join(parts), finish)
     (session / "notes.md").write_text(notes)
     return notes
 
@@ -434,13 +449,40 @@ def import_materials(course, date):
 
 @app.post("/api/session/<course>/<date>/generate")
 def generate(course, date):
+    """Dribble whitespace while the model works, then the JSON result.
+
+    A lecture takes ~7min and the model sends nothing for the first ~80s of it;
+    Cloudflare's tunnel cancels a request that quiet. So the work runs in a
+    thread and this ticks a keepalive on the clock rather than on the model's
+    pace - waiting on chunks would leave that first 80s silent. Leading
+    whitespace is legal JSON, so the client still just parses the body.
+
+    The 200 goes out before the outcome is known, so failures come back in the
+    body as {"error": ...}. The thread finishes and saves notes.md even if the
+    browser gives up first, so a lost connection costs a reload, not a rerun.
+    """
     d = session_dir(course, date)
-    try:
-        return jsonify(notes=generate_notes(d))
-    except subprocess.CalledProcessError as e:
-        return jsonify(error=f"{Path(e.cmd[0]).name} failed: {e.stderr.decode()[-500:]}"), 500
-    except Exception as e:
-        return jsonify(error=str(e)), 500
+
+    def body():
+        result = {}
+
+        def work():
+            try:
+                result["notes"] = generate_notes(d)
+            except subprocess.CalledProcessError as e:
+                result["error"] = f"{Path(e.cmd[0]).name} failed: {e.stderr.decode()[-500:]}"
+            except Exception as e:
+                result["error"] = str(e)
+
+        worker = threading.Thread(target=work, daemon=True)
+        worker.start()
+        yield " "  # start the bytes flowing now, not ten seconds from now
+        while worker.is_alive():
+            worker.join(10)
+            yield " "
+        yield json.dumps(result)
+
+    return Response(stream_with_context(body()), mimetype="application/json")
 
 
 @app.post("/api/session/<course>/<date>/notes")

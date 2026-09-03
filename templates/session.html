@@ -162,7 +162,7 @@ $('tab-preview').onclick = () => show('preview');
 show('preview');
 
 // --- progress bar: the server cannot report real progress, so pace it off a measured ETA ---
-const ETA_MS = 190000;  // a full lecture took ~3min on deepseek-v4-flash; tune if you change NOTES_MODEL
+const ETA_MS = 420000;  // measured: ~7min for a 33k-char prompt on deepseek-v4-flash, silent for the first ~80s
 let progTimer;
 
 function startProgress() {
@@ -232,8 +232,14 @@ $('gen').onclick = async () => {
   startProgress();
   try {
     const r = await fetch(`${API}/generate`, { method: 'POST' });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
+    const body = await r.text();
+    // Anything that is not our JSON is a proxy or tunnel error page. Safari
+    // reports a failed parse as "The string did not match the expected
+    // pattern", which tells you nothing - show the status and the real body.
+    let data;
+    try { data = JSON.parse(body); }
+    catch { throw new Error(`Server sent ${r.status} — ${body.trim().slice(0, 120) || 'an empty response'}`); }
+    if (data.error) throw new Error(data.error);
     $('notes').value = data.notes;
     $('save').disabled = false;
     stopProgress(true);

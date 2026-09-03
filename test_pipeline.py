@@ -318,32 +318,62 @@ def test_delete_material_removes_only_a_plain_filename():
         assert (Path(tmp) / "meta.json").exists(), "nothing escapes the materials folder"
 
 
-class FakeMessage:
-    def __init__(self, content, reasoning_content=""):
-        self.content = content
-        self.reasoning_content = reasoning_content
-
-
 def test_notes_text_rejects_a_response_that_carries_no_notes():
     """These models think in `reasoning_content` and answer in `content`.
-    When the token budget runs out mid-thought `content` comes back null -
+    When the token budget runs out mid-thought no `content` ever streams -
     that is a truncated run, not notes, and it must not reach write_text()."""
-    good = FakeMessage("## Summary\nNormalization.", reasoning_content="1. The user wants")
-    assert appmod.notes_text(good, "stop") == "## Summary\nNormalization."
+    assert appmod.notes_text("## Summary\nNormalization.", "stop") == "## Summary\nNormalization."
 
-    for message, reason in [
-        (FakeMessage(None, reasoning_content="1. The user wants"), "length"),
-        (FakeMessage("", reasoning_content=""), "stop"),
-        (FakeMessage("   "), "stop"),
-    ]:
+    for text, reason in [(None, "length"), ("", "stop"), ("   ", "stop")]:
         try:
-            appmod.notes_text(message, reason)
-            raise AssertionError(f"should have rejected {message.content!r}")
+            appmod.notes_text(text, reason)
+            raise AssertionError(f"should have rejected {text!r}")
         except AssertionError:
             raise
         except RuntimeError as e:
             assert str(e), "the failure has to explain itself to the user"
             assert "NoneType" not in str(e), "not a raw TypeError"
+
+
+def _drive_generate(tmp, fake_generate_notes):
+    """POST /generate against a throwaway session with the model stubbed out."""
+    with _fake_classes(tmp) as root:
+        (root / "CS101" / "2026-01-01").mkdir(parents=True)
+        real, appmod.generate_notes = appmod.generate_notes, fake_generate_notes
+        try:
+            r = app.test_client().post("/api/session/CS101/2026-01-01/generate")
+            return r, r.get_data(as_text=True)
+        finally:
+            appmod.generate_notes = real
+
+
+def test_generate_streams_keepalive_that_stays_parseable_json():
+    """The model sends nothing for the first ~80s and Cloudflare's tunnel
+    cancels a request that quiet, so the route dribbles whitespace on a clock
+    while it waits - starting immediately, not after the first tick. That
+    padding is legal JSON, so the browser can still parse the body as-is."""
+    def fake(session):
+        (session / "notes.md").write_text("## Summary\nAll good.")
+        return "## Summary\nAll good."
+
+    with tempfile.TemporaryDirectory() as tmp:
+        r, body = _drive_generate(tmp, fake)
+        assert r.status_code == 200, body
+        assert body.startswith(" "), "no keepalive was sent before the result"
+        assert json.loads(body)["notes"] == "## Summary\nAll good."
+
+
+def test_generate_reports_failure_in_the_body_not_the_status():
+    """The 200 goes out before the outcome is known, so an error has to travel
+    in the body - and it must still be JSON, or the browser only sees a parse
+    error and the real reason is lost."""
+    def fake(session):
+        raise RuntimeError("Error code: 504")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        r, body = _drive_generate(tmp, fake)
+        assert r.status_code == 200, "a streamed response cannot retract its status"
+        assert json.loads(body)["error"] == "Error code: 504"
 
 
 if __name__ == "__main__":
