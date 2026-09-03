@@ -211,16 +211,17 @@ def merge_segments_audio(session):
         return
     listing = session / "segments" / "concat.txt"
     listing.write_text("".join(f"file '{s.name}'\n" for s in segs))
-    try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
-             "-c", "copy", str(session / "recording.webm")],
-            check=True, capture_output=True,
-        )
-    except subprocess.CalledProcessError as e:
-        app.logger.warning("could not merge audio: %s", e.stderr.decode()[-300:])
-    finally:
-        listing.unlink(missing_ok=True)
+    out = session / "recording.webm"
+    for codec in (["-c", "copy"], ["-c:a", "libopus"]):  # copy fails for Safari's aac in a webm container
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(listing), *codec, str(out)],
+                check=True, capture_output=True,
+            )
+            break
+        except subprocess.CalledProcessError as e:
+            app.logger.warning("merge with %s failed: %s", codec, e.stderr.decode()[-300:])
+    listing.unlink(missing_ok=True)
 
 
 def build_prompt(transcript, material_text):
@@ -456,4 +457,4 @@ def get_audio(course, date):
 if __name__ == "__main__":
     CLASSES.mkdir(exist_ok=True)
     # Debug off by default: the Werkzeug debugger can run code, and this serves uploads.
-    app.run(port=5005, debug=os.environ.get("DEBUG") == "1")
+    app.run(host="0.0.0.0", port=5005, debug=os.environ.get("DEBUG") == "1")
